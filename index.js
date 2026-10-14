@@ -1,1 +1,2 @@
-console.log("LINE Bot 運作中");
+{console.log("LINE Bot 運作中");
+}
