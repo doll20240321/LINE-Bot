@@ -10,7 +10,7 @@ const config = {
 
 // 這個 client 負責呼叫 LINE API 回覆訊息
 const lineClient =
-    line.LineBotClient.fromchannelAccessToken({
+    line.LineBotClient.fromChannelAccessToken({
         channelAccessToken:
             process.env.LINE_CHANNEL_ACCESS_TOKEN,
     })
