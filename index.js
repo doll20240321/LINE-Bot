@@ -193,9 +193,9 @@ if (text === "取消訂單") {
 // middleware 先驗證請求；通過後，才交給 handleEvent 處理。
 app.post("/webhook", line.middleware(config), async (req, res) => {
     try {
-        const results = await Promise.all(
-            req.body.events.map((event) => handleEvent(event))
-        );
+       const results = await Promise.all(
+    req.body.events.map((event) => handleEvent(event))
+);
 
         // 告訴 LINE：這批 webhook 事件已經收到。
         res.status(200).json(results);
