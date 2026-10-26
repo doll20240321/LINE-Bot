@@ -1,28 +1,53 @@
 const express = require("express");
-// sdk=Software Development Kit，軟體開發工具包；在此可理解為LINEbot的工具箱被const命名為LINE
 const line = require("@line/bot-sdk");
 
 const app = express();
 
+// 用戶的點餐進度先暫存在這個 Map 裡。
+// 這只是測試用：Railway 重啟後，尚未完成的訂單會消失。
 const orderSessions = new Map();
 
-
-// LINE 用這個 secret 確認 webhook 請求真的是 LINE 傳來的
+// LINE 用這個 Secret 驗證 webhook 請求。
 const config = {
     channelSecret: process.env.LINE_CHANNEL_SECRET,
 };
 
-// 這個 client 負責呼叫 LINE API 回覆訊息
-const lineClient =
-    line.LineBotClient.fromChannelAccessToken({
-        channelAccessToken:
-            process.env.LINE_CHANNEL_ACCESS_TOKEN,
-    })
+// 這個 client 負責呼叫 LINE API 回覆訊息。
+const lineClient = line.LineBotClient.fromChannelAccessToken({
+    channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
+});
 
-// 保留，一般瀏覽器測試用
+// 回傳文字；有提供選項時，也把快速回覆按鈕附上。
+function replyText(replyToken, text, choices) {
+    const message = {
+        type: "text",
+        text: text,
+    };
+
+    if (choices && choices.length > 0) {
+        message.quickReply = {
+            items: choices.map((choice) => ({
+                type: "action",
+                action: {
+                    type: "message",
+                    label: choice,
+                    text: choice,
+                },
+            })),
+        };
+    }
+
+    return lineClient.replyMessage({
+        replyToken: replyToken,
+        messages: [message],
+    });
+}
+
+// 一般瀏覽器測試用。
 app.get("/", (req, res) => {
     res.send("嗨，express正常運作中");
 });
+
 // 處理 LINE 送來的每個事件。
 async function handleEvent(event) {
     // 目前只處理文字訊息，其他事件先略過。
@@ -156,28 +181,24 @@ async function handleEvent(event) {
     return null;
 }
 
-// LINE會把webhook事件用POST送到這條路由
-// middleware會驗證簽章，並把LINE傳來的內容整理進 req.body
-
-// post：當用戶端有個動作，信鴿透過/webhook這條小徑送往express
-// middleware：中介軟體。專案是個大園區，而middleware則是剪票口，負責篩選符合資格的信鴿。
+// LINE 會用 POST 把 webhook 事件送到 /webhook。
+// middleware 先驗證請求；通過後，才交給 handleEvent 處理。
 app.post("/webhook", line.middleware(config), async (req, res) => {
-    // 這裡的req.body.events是一個陣列，裡面可能有多個事件
-    // LINE 一次可能送來多個事件，所以逐一處理
     try {
         const results = await Promise.all(
             req.body.events.map((event) => handleEvent(event))
         );
 
-         // 告訴 LINE：webhook 事件已收到並處理
-         res.status(200).json(results);
+        // 告訴 LINE：這批 webhook 事件已經收到。
+        res.status(200).json(results);
     } catch (error) {
-        console.error("回覆LINE訊息時發生錯誤！", error);
+        console.error("處理 LINE webhook 時發生錯誤：", error);
         res.sendStatus(500);
     }
-         });
+});
 
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
