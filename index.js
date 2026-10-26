@@ -166,23 +166,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
     // LINE 一次可能送來多個事件，所以逐一處理
     try {
         const results = await Promise.all(
-            req.body.events.map((event) => {
-                // 目前只回覆文字訊息，其他事件先略過
-            if (event.type !== "message" ||
-                event.message.type !== "text") {
-                    return Promise. resolve(null);
-                }
-                // 把收到的文字原樣傳回給使用者
-                return lineClient.replyMessage({
-                    replyToken: event.replyToken,
-                    messages: [
-                        {
-                            type: "text",
-                            text: event.message.text,
-                        },
-                    ],
-                });
-            })
+            req.body.events.map((event) => handleEvent(event))
         );
 
          // 告訴 LINE：webhook 事件已收到並處理
