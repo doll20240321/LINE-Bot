@@ -65,6 +65,14 @@ async function handleEvent(event) {
     const text = event.message.text.trim();
     let order = orderSessions.get(userId);
 
+    // 不管客人走到哪個點餐步驟，都先檢查是否要取消。
+if (text === "取消訂單") {
+    // 刪除這位客人目前暫存的點餐進度。
+    orderSessions.delete(userId);
+
+    return replyText(event.replyToken, "已取消目前這筆點餐。");
+}
+
     // 還沒開始點餐時，輸入「我要點餐」就開始。
     if (!order) {
         if (text === "我要點餐" || text === "點餐") {
