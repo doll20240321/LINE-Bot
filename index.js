@@ -213,8 +213,35 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+async function createOrdersTable() {
+    // 如果 orders 表還不存在，就建立它。
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS orders (
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            line_user_id TEXT NOT NULL,
+            ordered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            pickup_at TIMESTAMPTZ NOT NULL,
+            item_name TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            total_amount INTEGER NOT NULL,
+            deposit_amount INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'confirmed'
+        )
+    `);
+}
+
+// 先確認資料表建立成功，再讓伺服器開始接收訊息。
+createOrdersTable()
+    .then(() => {
+        console.log("訂單資料表已準備好");
+
+        app.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
+        });
+    })
+    .catch((error) => {
+        console.error("建立訂單資料表時發生錯誤：", error);
+        process.exit(1);
+    });
 
 console.log("LINE Bot 運作中");
