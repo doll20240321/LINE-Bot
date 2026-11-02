@@ -48,28 +48,93 @@ function replyText(replyToken, text, choices) {
         messages: [message],
     });
 }
+    // 傳送 LINE 內建的日期時間選擇按鈕。
+async function replyWithPickupPicker(replyToken) {
+    return lineClient.replyMessage({
+        replyToken,
+        messages: [
+            {
+                type: "text",
+                text: "請選擇取餐日期和時間：",
+                quickReply: {
+                    items: [
+                        {
+                            type: "action",
+                            action: {
+                                type: "datetimepicker",
+                                label: "選取日期時間",
+                                data: "action=choosePickupTime",
+                                mode: "datetime",
+                            },
+                        },
+                    ],
+                },
+            },
+        ],
+    });
+}
 
+// 選完取餐時間後，整理訂單摘要。
+function createOrderSummary(order) {
+    order.deposit =
+        order.total >= 300 ? Math.ceil(order.total / 2) : 0;
+
+    order.step = "confirm";
+
+    const depositText =
+        order.deposit > 0
+            ? `訂金：${order.deposit} 元（測試版只計算，不會收款）`
+            : "訂金：0 元";
+
+    return (
+        `訂單摘要\n` +
+        `${order.itemName} x ${order.quantity}\n` +
+        `取餐時間：${order.pickupAt.slice(0, 16).replace("T", " ")}\n` +
+        `總金額：${order.total} 元\n` +
+        `${depositText}\n` +
+        "請確認這筆測試訂單："
+    );
+}
 // 一般瀏覽器測試用。
 app.get("/", (req, res) => {
     res.send("嗨，express正常運作中");
 });
-
-// 處理 LINE 送來的每個事件。
 async function handleEvent(event) {
-    // 目前只處理文字訊息，其他事件先略過。
-    if (event.type !== "message" || event.message.type !== "text") {
-        return null;
-    }
-
     const userId = event.source && event.source.userId;
 
-    // 測試流程先處理一對一聊天；沒有使用者 ID 的事件先略過。
     if (!userId) {
         return null;
     }
 
-    const text = event.message.text.trim();
     let order = orderSessions.get(userId);
+
+    // 日期時間選擇器回傳的是 postback 事件。
+    if (
+        event.type === "postback" &&
+        event.postback.data === "action=choosePickupTime"
+    ) {
+        const selectedDateTime = event.postback.params.datetime;
+
+        if (!order || order.step !== "pickupTime") {
+            return null;
+        }
+
+        // LINE 回傳的選擇沒有時區；這裡先依台灣時間（UTC+8）記錄。
+        order.pickupAt = `${selectedDateTime}+08:00`;
+
+        return replyText(
+            event.replyToken,
+            createOrderSummary(order),
+            ["確認訂單", "取消訂單"]
+        );
+    }
+
+    // 其他不是文字訊息的事件先略過。
+    if (event.type !== "message" || event.message.type !== "text") {
+        return null;
+    }
+
+    const text = event.message.text.trim();
 
     // 不管客人走到哪個點餐步驟，都先檢查是否要取消。
 if (text === "取消訂單") {
@@ -121,52 +186,14 @@ if (text === "取消訂單") {
         order.total = order.quantity * order.unitPrice;
         order.step = "pickupTime";
 
-        return replyText(
-            event.replyToken,
-            "請選擇取餐時間：",
-            ["12:00", "12:30", "13:00"]
-        );
+        return await replyWithPickupPicker(event.replyToken);
     }
 
     // 目前正在等客人選取餐時間。
-    if (order.step === "pickupTime") {
-        const pickupTimes = ["12:00", "12:30", "13:00"];
-
-        if (!pickupTimes.includes(text)) {
-            return replyText(
-                event.replyToken,
-                "請用下方按鈕選擇取餐時間：",
-                pickupTimes
-            );
-        }
-
-        order.pickupTime = text;
-
-        // 滿 300 元收一半；有半元時無條件進位。
-        order.deposit =
-            order.total >= 300 ? Math.ceil(order.total / 2) : 0;
-
-        order.step = "confirm";
-
-        const depositText =
-            order.deposit > 0
-                ? `訂金：${order.deposit} 元（測試版只計算，不會收款）`
-                : "訂金：0 元";
-
-        const summary =
-            `訂單摘要\n` +
-            `${order.itemName} x ${order.quantity}\n` +
-            `取餐時間：${order.pickupTime}\n` +
-            `總金額：${order.total} 元\n` +
-            `${depositText}\n` +
-            "請確認這筆測試訂單：";
-
-        return replyText(
-            event.replyToken,
-            summary,
-            ["確認訂單", "取消訂單"]
-        );
-    }
+    // 等待日期時間選擇時，若客人傳了文字，就再顯示選擇器。
+if (order.step === "pickupTime") {
+    return replyWithPickupPicker(event.replyToken);
+}
 
     // 客人確認或取消測試訂單。
     if (order.step === "confirm") {
@@ -192,8 +219,7 @@ if (text === "取消訂單") {
         );
     }
 
-    return null;
-}
+    return null};
 
 // LINE 會用 POST 把 webhook 事件送到 /webhook。
 // middleware 先驗證請求；通過後，才交給 handleEvent 處理。
