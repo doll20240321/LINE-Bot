@@ -76,25 +76,17 @@ async function replyWithPickupPicker(replyToken) {
 
 // 選完取餐時間後，整理訂單摘要。
 function createOrderSummary(order) {
-    order.deposit =
-        order.total >= 300 ? Math.ceil(order.total / 2) : 0;
-
     order.step = "confirm";
-
-    const depositText =
-        order.deposit > 0
-            ? `訂金：${order.deposit} 元（測試版只計算，不會收款）`
-            : "訂金：0 元";
 
     return (
         `訂單摘要\n` +
         `${order.itemName} x ${order.quantity}\n` +
         `取餐時間：${order.pickupAt.slice(0, 16).replace("T", " ")}\n` +
         `總金額：${order.total} 元\n` +
-        `${depositText}\n` +
         "請確認這筆測試訂單："
     );
 }
+
 // 一般瀏覽器測試用。
 app.get("/", (req, res) => {
     res.send("嗨，express正常運作中");
