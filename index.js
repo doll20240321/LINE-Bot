@@ -1,5 +1,11 @@
 const express = require("express");
 const line = require("@line/bot-sdk");
+const { Pool } = require("pg");
+
+// 從 Railway 的環境變數取得資料庫連線資訊。
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+});
 
 const app = express();
 
