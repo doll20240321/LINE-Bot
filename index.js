@@ -12,6 +12,7 @@ const app = express();
 // 用戶的點餐進度先暫存在這個 Map 裡。
 // 這只是測試用：Railway 重啟後，尚未完成的訂單會消失。
 const orderSessions = new Map();
+const CANCELLATION_LIMIT_MINUTES = 30;
 
 // LINE 用這個 Secret 驗證 webhook 請求。
 const config = {
@@ -130,10 +131,53 @@ async function handleEvent(event) {
 
     // 不管客人走到哪個點餐步驟，都先檢查是否要取消。
 if (text === "取消訂單") {
-    // 刪除這位客人目前暫存的點餐進度。
-    orderSessions.delete(userId);
+    // 若還在點餐途中，只取消 Map 裡的草稿。
+    if (order) {
+        orderSessions.delete(userId);
+        return replyText(event.replyToken, "已取消目前這筆點餐。");
+    }
 
-    return replyText(event.replyToken, "已取消目前這筆點餐。");
+    try {
+        // 找出這位客人最近一筆已確認的訂單。
+        const result = await pool.query(
+            `SELECT id, pickup_at
+             FROM orders
+             WHERE line_user_id = $1 AND status = $2
+             ORDER BY ordered_at DESC
+             LIMIT 1`,
+            [userId, "confirmed"]
+        );
+
+        const savedOrder = result.rows[0];
+
+        if (!savedOrder) {
+            return replyText(event.replyToken, "目前找不到已確認的訂單。");
+        }
+
+        const timeUntilPickup =
+            new Date(savedOrder.pickup_at).getTime() - Date.now();
+
+        // 少於 30 分鐘就不允許由機器人取消。
+        if (timeUntilPickup < CANCELLATION_LIMIT_MINUTES * 60 * 1000) {
+            return replyText(
+                event.replyToken,
+                "距離取餐時間不足 30 分鐘，請直接聯絡店家取消。"
+            );
+        }
+
+        // 將訂單標記為已取消，保留歷史紀錄。
+        await pool.query(
+            `UPDATE orders
+             SET status = $1
+             WHERE id = $2 AND status = $3`,
+            ["cancelled", savedOrder.id, "confirmed"]
+        );
+
+        return replyText(event.replyToken, "已取消這筆訂單。");
+    } catch (error) {
+        console.error("取消訂單時發生錯誤：", error);
+        return replyText(event.replyToken, "目前無法取消訂單，請稍後再試。");
+    }
 }
 
     // 還沒開始點餐時，輸入「我要點餐」就開始。
