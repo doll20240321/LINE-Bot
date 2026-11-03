@@ -190,13 +190,37 @@ if (order.step === "pickupTime") {
     // 客人確認或取消測試訂單。
     if (order.step === "confirm") {
         if (text === "確認訂單") {
-            orderSessions.delete(userId);
+    try {
+        await pool.query(
+            `INSERT INTO orders
+                (line_user_id, pickup_at, item_name, quantity, total_amount, deposit_amount, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+                userId,
+                order.pickupAt,
+                order.itemName,
+                order.quantity,
+                order.total,
+                0,
+                "confirmed",
+            ]
+        );
 
-            return replyText(
-                event.replyToken,
-                "測試訂單流程完成！目前這版不會真的收款，也不會把訂單保存給店家。"
-            );
-        }
+        orderSessions.delete(userId);
+
+        return replyText(
+            event.replyToken,
+            "訂單已確認並記錄！目前這個版本還不會真的收款。"
+        );
+    } catch (error) {
+        console.error("儲存訂單時發生錯誤：", error);
+
+        return replyText(
+            event.replyToken,
+            "訂單暫時無法保存，請稍後再試。"
+        );
+    }
+}
 
         if (text === "取消訂單") {
             orderSessions.delete(userId);
