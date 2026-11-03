@@ -145,7 +145,7 @@ if (text === "取消訂單") {
              WHERE line_user_id = $1 AND status = $2
              ORDER BY ordered_at DESC
              LIMIT 1`,
-            [userId, "confirmed"]
+            [userId, "待處理訂單"]
         );
 
         const savedOrder = result.rows[0];
@@ -170,7 +170,7 @@ if (text === "取消訂單") {
             `UPDATE orders
              SET status = $1
              WHERE id = $2 AND status = $3`,
-            ["cancelled", savedOrder.id, "confirmed"]
+            ["訂單已取消", savedOrder.id, "待處理訂單"]
         );
 
         return replyText(event.replyToken, "已取消這筆訂單。");
@@ -246,7 +246,7 @@ if (order.step === "pickupTime") {
                 order.quantity,
                 order.total,
                 0,
-                "confirmed",
+                "待處理訂單",
             ]
         );
 
@@ -311,7 +311,7 @@ async function createOrdersTable() {
             quantity INTEGER NOT NULL,
             total_amount INTEGER NOT NULL,
             deposit_amount INTEGER NOT NULL DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'confirmed'
+            status TEXT NOT NULL DEFAULT '待處理訂單'
         )
     `);
 }
