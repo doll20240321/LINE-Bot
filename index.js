@@ -50,13 +50,16 @@ function replyText(replyToken, text, choices) {
     });
 }
     // 傳送 LINE 內建的日期時間選擇按鈕。
-async function replyWithPickupPicker(replyToken) {
+async function replyWithPickupPicker(
+    replyToken,
+    prompt = "請選擇取餐日期和時間："
+) {
     return lineClient.replyMessage({
         replyToken,
         messages: [
             {
                 type: "text",
-                text: "請選擇取餐日期和時間：",
+                text: prompt,
                 quickReply: {
                     items: [
                         {
@@ -112,8 +115,20 @@ async function handleEvent(event) {
             return null;
         }
 
-        // LINE 回傳的選擇沒有時區；這裡先依台灣時間（UTC+8）記錄。
-        order.pickupAt = `${selectedDateTime}+08:00`;
+       const minimumMinutes = order.quantity >= 3 ? 60 : 30;
+const selectedTime = new Date(`${selectedDateTime}+08:00`).getTime();
+const earliestAllowedTime =
+    Date.now() + minimumMinutes * 60 * 1000;
+
+if (selectedTime < earliestAllowedTime) {
+    return replyWithPickupPicker(
+        event.replyToken,
+        `這個數量需要至少提前 ${minimumMinutes} 分鐘預訂，請選更晚的時間。`
+    );
+}
+
+// LINE 回傳的選擇沒有時區；這裡先依台灣時間（UTC+8）記錄。
+order.pickupAt = `${selectedDateTime}+08:00`;
 
         return replyText(
             event.replyToken,
