@@ -49,9 +49,22 @@ function replyText(replyToken, text, choices) {
         messages: [message],
     });
 }
-    // 傳送 LINE 內建的日期時間選擇按鈕。
-async function replyWithPickupPicker(
+// 傳送 LINE 內建的日期時間選擇按鈕。
+// 算出台灣時間的最早可取餐時間。
+function getTaipeiMinimumTime(minimumMinutes) {
+    const taipeiTime =
+        Date.now() +
+        minimumMinutes * 60 * 1000 +
+        8 * 60 * 60 * 1000;
+
+    // 日期選擇器需要 YYYY-MM-DDTHH:mm 格式。
+    return new Date(taipeiTime).toISOString().slice(0, 16);
+}
+
+// 傳送 LINE 內建的日期時間選擇按鈕。
+function replyWithPickupPicker(
     replyToken,
+    minimumMinutes,
     prompt = "請選擇取餐日期和時間："
 ) {
     return lineClient.replyMessage({
@@ -69,6 +82,7 @@ async function replyWithPickupPicker(
                                 label: "選取日期時間",
                                 data: "action=choosePickupTime",
                                 mode: "datetime",
+                                min: getTaipeiMinimumTime(minimumMinutes),
                             },
                         },
                     ],
@@ -111,11 +125,11 @@ async function handleEvent(event) {
     ) {
         const selectedDateTime = event.postback.params.datetime;
 
-        if (!order || order.step !== "pickupTime") {
-            return null;
-        }
+ if (!order || order.step !== "pickupTime") {
+    return null;
+}
 
-       const minimumMinutes = order.quantity >= 3 ? 60 : 30;
+const minimumMinutes = order.quantity >= 3 ? 60 : 30;
 const selectedTime = new Date(`${selectedDateTime}+08:00`).getTime();
 const earliestAllowedTime =
     Date.now() + minimumMinutes * 60 * 1000;
@@ -123,6 +137,7 @@ const earliestAllowedTime =
 if (selectedTime < earliestAllowedTime) {
     return replyWithPickupPicker(
         event.replyToken,
+        minimumMinutes,
         `這個數量需要至少提前 ${minimumMinutes} 分鐘預訂，請選更晚的時間。`
     );
 }
@@ -236,14 +251,16 @@ if (text === "取消訂單") {
         order.quantity = quantities[text];
         order.total = order.quantity * order.unitPrice;
         order.step = "pickupTime";
-
-        return await replyWithPickupPicker(event.replyToken);
+        
+    const minimumMinutes = order.quantity >= 3 ? 60 : 30;
+    return replyWithPickupPicker(event.replyToken, minimumMinutes);
     }
 
     // 目前正在等客人選取餐時間。
     // 等待日期時間選擇時，若客人傳了文字，就再顯示選擇器。
 if (order.step === "pickupTime") {
-    return replyWithPickupPicker(event.replyToken);
+    const minimumMinutes = order.quantity >= 3 ? 60 : 30;
+    return replyWithPickupPicker(event.replyToken, minimumMinutes);
 }
 
     // 客人確認或取消測試訂單。
@@ -294,7 +311,8 @@ if (order.step === "pickupTime") {
         );
     }
 
-    return null};
+    return null;
+}
 
 // LINE 會用 POST 把 webhook 事件送到 /webhook。
 // middleware 先驗證請求；通過後，才交給 handleEvent 處理。
