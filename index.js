@@ -240,7 +240,10 @@ if (text === "說明" || text === "幫助") {
         }
 
         // 尚未進入點餐流程時，維持原本的回音功能。
-        return replyText(event.replyToken, text);
+        return replyText(
+    event.replyToken,
+    "我還不認識這個指令。輸入「說明」查看用法。"
+);
     }
 
     // 目前正在等客人選數量。
