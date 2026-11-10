@@ -345,8 +345,6 @@ async function handleEvent(event) {
         }
 
         const selectedQuantity = quantities[text];
-
-        // 如果清單已有同一道餐點，就增加份數；否則新增餐點。
         const existingItem = order.items.find(
             (item) => item.itemName === order.itemName
         );
@@ -361,17 +359,8 @@ async function handleEvent(event) {
             });
         }
 
-        // 從清單重新計算總份數與總金額。
-        order.quantity = order.items.reduce(
-            (sum, item) => sum + item.quantity,
-            0
-        );
-
-        order.total = order.items.reduce(
-            (sum, item) => sum + item.unitPrice * item.quantity,
-            0
-        );
-
+        order.quantity += selectedQuantity;
+        order.total += order.unitPrice * selectedQuantity;
         order.step = "cartReview";
 
         return replyText(
@@ -381,163 +370,93 @@ async function handleEvent(event) {
         );
     }
 
-    const selectedQuantity = quantities[text];
-
-    // 找看看購物清單裡是否已經有同一道餐點。
-    const existingItem = order.items.find(
-        (item) => item.itemName === order.itemName
-    );
-
-    if (existingItem) {
-        // 已經選過：把這次的份數加上去。
-        existingItem.quantity += selectedQuantity;
-    } else {
-        // 第一次選：新增一筆餐點資料。
-        order.items.push({
-            itemName: order.itemName,
-            unitPrice: order.unitPrice,
-            quantity: selectedQuantity,
-        });
-    }
-
-    // 重新計算所有餐點的總份數與總金額。
-    order.quantity = order.items.reduce(
-        (sum, item) => sum + item.quantity,
-        0
-    );
-
-    order.total = order.items.reduce(
-        (sum, item) => sum + item.unitPrice * item.quantity,
-        0
-    );
-
-    order.step = "cartReview";
-
-    return replyText(
-        event.replyToken,
-        createCartSummary(order),
-        ["繼續選擇餐點", "確認訂單"]
-    );
-}
-
-// 目前正在等客人選數量。
-if (order.step === "quantity") {
-    const quantities = {
-        "1份": 1,
-        "2份": 2,
-        "3份": 3,
-    };
-
-    if (!quantities[text]) {
-        return replyText(
-            event.replyToken,
-            "請用下方按鈕選擇數量：",
-            ["1份", "2份", "3份"]
-        );
-    }
-
-    order.quantity = quantities[text];
-    order.total = order.quantity * order.unitPrice;
-    order.step = "pickupTime";
-
-    const minimumMinutes = order.quantity >= 3 ? 60 : 30;
-    return replyWithPickupPicker(event.replyToken, minimumMinutes);
-}
-
-// 客人檢查目前的購物清單。
-if (order.step === "cartReview") {
-    if (text === "繼續選擇餐點") {
-        // 回到選大類別，讓客人再選一道餐點。
-        order.step = "category";
-
-        return replyText(
-            event.replyToken,
-            "請再選擇一個餐點類別：",
-            ["蛋餅", "炒飯"]
-        );
-    }
-
-    if (text === "確認訂單") {
-        // 購物清單確認後，才開始選取餐時間。
-        order.step = "pickupTime";
-
-        const minimumMinutes = order.quantity >= 3 ? 60 : 30;
-
-        return replyWithPickupPicker(
-            event.replyToken,
-            minimumMinutes
-        );
-    }
-
-    // 客人輸入其他文字時，再顯示清單和按鈕。
-    return replyText(
-        event.replyToken,
-        createCartSummary(order),
-        ["繼續選擇餐點", "確認訂單"]
-    );
-}
-
-// 目前正在等客人選取餐時間。
-// 等待日期時間選擇時，若客人傳了文字，就再顯示選擇器。
-if (order.step === "pickupTime") {
-    const minimumMinutes = order.quantity >= 3 ? 60 : 30;
-    return replyWithPickupPicker(event.replyToken, minimumMinutes);
-}
-
-// 客人確認或取消測試訂單。
-if (order.step === "confirm") {
-    if (text === "確認訂單") {
-
-        const orderItemsText = order.items
-            .map((item) => `${item.itemName} x ${item.quantity}`)
-            .join("、");
-
-        try {
-            await pool.query(
-                `INSERT INTO orders
-        (line_user_id, pickup_at, item_name, quantity, total_amount, deposit_amount, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [
-                    userId,             // $1
-                    order.pickupAt,     // $2
-                    orderItemsText,     // $3
-                    order.quantity,     // $4
-                    order.total,        // $5
-                    0,                  // $6
-                    "待處理訂單",       // $7
-                ]
-            );
-
-            orderSessions.delete(userId);
+    // 客人檢查目前的購物清單。
+    if (order.step === "cartReview") {
+        if (text === "繼續選擇餐點") {
+            order.step = "category";
 
             return replyText(
                 event.replyToken,
-                "訂單已確認並記錄！目前這個版本還不會真的收款。"
-            );
-        } catch (error) {
-            console.error("儲存訂單時發生錯誤：", error);
-
-            return replyText(
-                event.replyToken,
-                "訂單暫時無法保存，請稍後再試。"
+                "請再選擇一個餐點類別：",
+                ["蛋餅", "炒飯"]
             );
         }
+
+        if (text === "確認訂單") {
+            order.step = "pickupTime";
+
+            const minimumMinutes = order.quantity >= 3 ? 60 : 30;
+            return replyWithPickupPicker(event.replyToken, minimumMinutes);
+        }
+
+        return replyText(
+            event.replyToken,
+            createCartSummary(order),
+            ["繼續選擇餐點", "確認訂單"]
+        );
     }
 
-    if (text === "取消訂單") {
-        orderSessions.delete(userId);
-
-        return replyText(event.replyToken, "已取消這筆測試訂單。");
+    // 等待日期時間選擇時，若客人傳了文字，就再顯示選擇器。
+    if (order.step === "pickupTime") {
+        const minimumMinutes = order.quantity >= 3 ? 60 : 30;
+        return replyWithPickupPicker(event.replyToken, minimumMinutes);
     }
 
-    return replyText(
-        event.replyToken,
-        "請選擇確認或取消：",
-        ["確認訂單", "取消訂單"]
-    );
+    // 客人確認或取消測試訂單。
+    if (order.step === "confirm") {
+        if (text === "確認訂單") {
+
+            const orderItemsText = order.items
+                .map((item) => `${item.itemName} x ${item.quantity}`)
+                .join("、");
+
+            try {
+                await pool.query(
+                    `INSERT INTO orders
+        (line_user_id, pickup_at, item_name, quantity, total_amount, deposit_amount, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                    [
+                        userId,             // $1
+                        order.pickupAt,     // $2
+                        orderItemsText,     // $3
+                        order.quantity,     // $4
+                        order.total,        // $5
+                        0,                  // $6
+                        "待處理訂單",       // $7
+                    ]
+                );
+
+                orderSessions.delete(userId);
+
+                return replyText(
+                    event.replyToken,
+                    "訂單已確認並記錄！目前這個版本還不會真的收款。"
+                );
+            } catch (error) {
+                console.error("儲存訂單時發生錯誤：", error);
+
+                return replyText(
+                    event.replyToken,
+                    "訂單暫時無法保存，請稍後再試。"
+                );
+            }
+        }
+
+        if (text === "取消訂單") {
+            orderSessions.delete(userId);
+
+            return replyText(event.replyToken, "已取消這筆測試訂單。");
+        }
+
+        return replyText(
+            event.replyToken,
+            "請選擇確認或取消：",
+            ["確認訂單", "取消訂單"]
+        );
+    }
+
+    return null;
 }
-
-return null;
 
 // LINE 會用 POST 把 webhook 事件送到 /webhook。
 // middleware 先驗證請求；通過後，才交給 handleEvent 處理。
