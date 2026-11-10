@@ -24,7 +24,7 @@ const lineClient = line.LineBotClient.fromChannelAccessToken({
     channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
 });
 
-// 回傳文字；有提供選項時，也把快速回覆按鈕附上。
+// 宣告名叫「replyText」的函式：把要回覆的文字和可選按鈕，組成LINEapi的訊息格式並送出。
 function replyText(replyToken, text, choices) {
     const message = {
         type: "text",
@@ -217,34 +217,92 @@ if (text === "說明" || text === "幫助") {
         "目前可用指令：\n" +
         "「我要點餐」：開始點餐\n" +
         "「取消訂單」：取消點餐；已確認訂單須在取餐前 30 分鐘以上取消\n" +
-        "目前測試品項：測試便當"
+        "目前測試品項：原味蛋餅35元、乳酪絲蛋餅60元、泰式打拋豬肉炒飯90元、泰式酸辣豬肉炒飯90元"
     );
 }
 
     // 還沒開始點餐時，輸入「我要點餐」就開始。
-    if (!order) {
-        if (text === "我要點餐" || text === "點餐") {
-            order = {
-                step: "quantity",
-                itemName: "測試便當",
-                unitPrice: 150,
-            };
+   // 還沒開始點餐時，輸入「我要點餐」就開始。
+if (!order) {
+    if (text === "我要點餐" || text === "點餐") {
+        // 先建立一筆尚未選好餐點的草稿，從選大類別開始。
+        order = {
+            step: "category",
+        };
 
-            orderSessions.set(userId, order);
+        orderSessions.set(userId, order);
 
-            return replyText(
-                event.replyToken,
-                "今天的測試餐點是「測試便當」，一份 150 元。請選數量：",
-                ["1份", "2份", "3份"]
-            );
-        }
-
-        // 尚未進入點餐流程時，維持原本的回音功能。
         return replyText(
-    event.replyToken,
-    "我還不認識這個指令。輸入「說明」查看用法。"
-);
+            event.replyToken,
+            "請先選擇餐點類別：",
+            ["蛋餅", "炒飯"]
+        );
     }
+
+    return replyText(
+        event.replyToken,
+        "我還不認識這個指令。輸入「說明」查看用法。"
+    );
+}
+// 客人選好了大類別，接著列出這一類的品項。
+if (order.step === "category") {
+    const choicesByCategory = {
+        "蛋餅": ["原味蛋餅", "乳酪絲蛋餅"],
+        "炒飯": ["泰式打拋豬肉炒飯", "泰式酸辣豬肉炒飯"],
+    };
+
+    if (!choicesByCategory[text]) {
+        return replyText(
+            event.replyToken,
+            "請選擇餐點類別：",
+            ["蛋餅", "炒飯"]
+        );
+    }
+
+    order.category = text;
+    order.step = "meal";
+
+    return replyText(
+        event.replyToken,
+        `請選擇${order.category}品項：`,
+        choicesByCategory[order.category]
+    );
+}
+
+// 客人選好了品項，記下餐點名稱和價格，再進入選份數。
+if (order.step === "meal") {
+    const menu = {
+        "蛋餅": {
+            "原味蛋餅": 35,
+            "乳酪絲蛋餅": 60,
+        },
+        "炒飯": {
+            "泰式打拋豬肉炒飯": 90,
+            "泰式酸辣豬肉炒飯": 90,
+        },
+    };
+
+    const categoryMenu = menu[order.category];
+    const unitPrice = categoryMenu && categoryMenu[text];
+
+    if (!unitPrice) {
+        return replyText(
+            event.replyToken,
+            "請選擇下方的餐點品項：",
+            Object.keys(categoryMenu)
+        );
+    }
+
+    order.itemName = text;
+    order.unitPrice = unitPrice;
+    order.step = "quantity";
+
+    return replyText(
+        event.replyToken,
+        `你選的是「${order.itemName}」，一份 ${order.unitPrice} 元。請選擇份數：`,
+        ["1份", "2份", "3份"]
+    );
+}
 
     // 目前正在等客人選數量。
     if (order.step === "quantity") {
