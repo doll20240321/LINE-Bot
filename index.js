@@ -13,6 +13,7 @@ const app = express();
 // 這只是測試用：Railway 重啟後，尚未完成的訂單會消失。
 const orderSessions = new Map();
 const CANCELLATION_LIMIT_MINUTES = 30;
+const CLOSING_HOUR = 20; // 晚上 8 點打烊
 
 // LINE 用這個 Secret 驗證 webhook 請求。
 const config = {
@@ -151,6 +152,18 @@ async function handleEvent(event) {
         }
 
         const minimumMinutes = order.quantity >= 3 ? 60 : 30;
+        // LINE 選擇器回傳的時間是「時:分」；取出小時來檢查打烊時間。
+        const pickupHour = Number(
+            selectedDateTime.split("T")[1].split(":")[0]
+        );
+
+        if (pickupHour >= CLOSING_HOUR) {
+            return replyWithPickupPicker(
+                event.replyToken,
+                minimumMinutes,
+                "本店晚上 8 點打烊，請選擇晚上 8 點前的取餐時間。"
+            );
+        }
         const selectedTime = new Date(`${selectedDateTime}+08:00`).getTime();
         const earliestAllowedTime =
             Date.now() + minimumMinutes * 60 * 1000;
@@ -328,90 +341,90 @@ async function handleEvent(event) {
         );
     }
 
-   // 客人選好份數，或輸入自訂份數後，把餐點放進暫存清單。
-if (order.step === "quantity" || order.step === "customQuantity") {
-    let selectedQuantity;
+    // 客人選好份數，或輸入自訂份數後，把餐點放進暫存清單。
+    if (order.step === "quantity" || order.step === "customQuantity") {
+        let selectedQuantity;
 
-    // 選了「自行輸入數量」後，要求客人輸入數字。
-    if (order.step === "quantity" && text === "自行輸入數量") {
-        order.step = "customQuantity";
+        // 選了「自行輸入數量」後，要求客人輸入數字。
+        if (order.step === "quantity" && text === "自行輸入數量") {
+            order.step = "customQuantity";
+
+            return replyText(
+                event.replyToken,
+                "請輸入要訂購的份數，只能輸入正整數，例如：4"
+            );
+        }
+
+        if (order.step === "customQuantity") {
+            // 只接受正整數，例如 4；不接受 0、小數或其他文字。
+            if (!/^[0-9]+$/.test(text)) {
+                return replyText(
+                    event.replyToken,
+                    "請輸入正整數份數，例如：4"
+                );
+            }
+
+            selectedQuantity = Number(text);
+
+            if (!Number.isSafeInteger(selectedQuantity) || selectedQuantity < 1) {
+                return replyText(
+                    event.replyToken,
+                    "這個數量無法使用，請重新輸入正整數份數。"
+                );
+            }
+        } else {
+            // 直接按 1、2、3 份時，從對照表取得數量。
+            const quantities = {
+                "1份": 1,
+                "2份": 2,
+                "3份": 3,
+            };
+
+            selectedQuantity = quantities[text];
+
+            if (!selectedQuantity) {
+                return replyText(
+                    event.replyToken,
+                    "請用下方按鈕選擇數量，或選「自行輸入數量」：",
+                    ["1份", "2份", "3份", "自行輸入數量"]
+                );
+            }
+        }
+
+        // 如果清單已有同一道餐點，就增加份數；否則新增餐點。
+        const existingItem = order.items.find(
+            (item) => item.itemName === order.itemName
+        );
+
+        if (existingItem) {
+            existingItem.quantity += selectedQuantity;
+        } else {
+            order.items.push({
+                itemName: order.itemName,
+                unitPrice: order.unitPrice,
+                quantity: selectedQuantity,
+            });
+        }
+
+        // 從清單重新計算總份數與總金額。
+        order.quantity = order.items.reduce(
+            (sum, item) => sum + item.quantity,
+            0
+        );
+
+        order.total = order.items.reduce(
+            (sum, item) => sum + item.unitPrice * item.quantity,
+            0
+        );
+
+        order.step = "cartReview";
 
         return replyText(
             event.replyToken,
-            "請輸入要訂購的份數，只能輸入正整數，例如：4"
+            createCartSummary(order),
+            ["繼續選擇餐點", "確認訂單"]
         );
     }
-
-    if (order.step === "customQuantity") {
-        // 只接受正整數，例如 4；不接受 0、小數或其他文字。
-        if (!/^[0-9]+$/.test(text)) {
-            return replyText(
-                event.replyToken,
-                "請輸入正整數份數，例如：4"
-            );
-        }
-
-        selectedQuantity = Number(text);
-
-        if (!Number.isSafeInteger(selectedQuantity) || selectedQuantity < 1) {
-            return replyText(
-                event.replyToken,
-                "這個數量無法使用，請重新輸入正整數份數。"
-            );
-        }
-    } else {
-        // 直接按 1、2、3 份時，從對照表取得數量。
-        const quantities = {
-            "1份": 1,
-            "2份": 2,
-            "3份": 3,
-        };
-
-        selectedQuantity = quantities[text];
-
-        if (!selectedQuantity) {
-            return replyText(
-                event.replyToken,
-                "請用下方按鈕選擇數量，或選「自行輸入數量」：",
-                ["1份", "2份", "3份", "自行輸入數量"]
-            );
-        }
-    }
-
-    // 如果清單已有同一道餐點，就增加份數；否則新增餐點。
-    const existingItem = order.items.find(
-        (item) => item.itemName === order.itemName
-    );
-
-    if (existingItem) {
-        existingItem.quantity += selectedQuantity;
-    } else {
-        order.items.push({
-            itemName: order.itemName,
-            unitPrice: order.unitPrice,
-            quantity: selectedQuantity,
-        });
-    }
-
-    // 從清單重新計算總份數與總金額。
-    order.quantity = order.items.reduce(
-        (sum, item) => sum + item.quantity,
-        0
-    );
-
-    order.total = order.items.reduce(
-        (sum, item) => sum + item.unitPrice * item.quantity,
-        0
-    );
-
-    order.step = "cartReview";
-
-    return replyText(
-        event.replyToken,
-        createCartSummary(order),
-        ["繼續選擇餐點", "確認訂單"]
-    );
-}
 
     // 客人檢查目前的購物清單。
     if (order.step === "cartReview") {
